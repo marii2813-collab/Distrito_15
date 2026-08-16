@@ -1,7 +1,20 @@
 ############################################################
 # DISTRITO ELECTORAL 15 - ALCALDÍA IZTACALCO
-# Aplicación Shiny + Leaflet
-# Compatible con Posit Connect Cloud
+#
+# SHINY + LEAFLET
+# SIN TMAP
+# SIN TERRA
+#
+# REGLAS DE COLOR:
+#
+# DIFERENCIA <= -10       = ROJO
+# -10 < DIFERENCIA < 10   = GRIS
+# DIFERENCIA >= 10        = AZUL
+#
+# VISITADO = SI            = VERDE
+#
+# VISITADO TIENE PRIORIDAD
+# SOBRE LA DIFERENCIA.
 ############################################################
 
 
@@ -18,22 +31,35 @@ library(here)
 
 
 # ==========================================================
-# 2. CARGA DE SHAPEFILES
+# 2. COLORES DEFINITIVOS
 # ==========================================================
 
-# ----------------------------------------------------------
-# Shapefile Distrito Electoral 15
-# ----------------------------------------------------------
+COLOR_ROJO  <- "#E31A1C"
+COLOR_GRIS  <- "#808080"
+COLOR_AZUL  <- "#1976D2"
+COLOR_VERDE <- "#2E7D32"
+
+
+# ==========================================================
+# 3. CARGAR SHAPEFILE DEL DISTRITO
+# ==========================================================
 
 shpFILES_dist15 <- list.files(
-  path = here("data", "Distrito electoral 15"),
+  path = here(
+    "data",
+    "Distrito electoral 15"
+  ),
   pattern = "\\.shp$",
   full.names = TRUE,
   ignore.case = TRUE
 )
 
 if (length(shpFILES_dist15) == 0) {
-  stop("No se encontró el shapefile del Distrito Electoral 15.")
+  
+  stop(
+    "No se encontró el shapefile del Distrito Electoral 15."
+  )
+  
 }
 
 shp_dist15 <- st_read(
@@ -42,19 +68,26 @@ shp_dist15 <- st_read(
 )
 
 
-# ----------------------------------------------------------
-# Shapefile Secciones Electorales
-# ----------------------------------------------------------
+# ==========================================================
+# 4. CARGAR SHAPEFILE DE SECCIONES
+# ==========================================================
 
 shpFILES_sec_elec <- list.files(
-  path = here("data", "Secciones electorales"),
+  path = here(
+    "data",
+    "Secciones electorales"
+  ),
   pattern = "\\.shp$",
   full.names = TRUE,
   ignore.case = TRUE
 )
 
 if (length(shpFILES_sec_elec) == 0) {
-  stop("No se encontró el shapefile de Secciones Electorales.")
+  
+  stop(
+    "No se encontró el shapefile de Secciones Electorales."
+  )
+  
 }
 
 shp_sec_elec <- st_read(
@@ -64,789 +97,1087 @@ shp_sec_elec <- st_read(
 
 
 # ==========================================================
-# 3. PREPARACIÓN DE LOS SHAPEFILES
+# 5. PREPARAR SHAPEFILES
 # ==========================================================
 
-# El mapa de Leaflet necesita WGS84
 shp_dist15 <- shp_dist15 %>%
-  st_zm(drop = TRUE, what = "ZM") %>%
+  
+  st_zm(
+    drop = TRUE,
+    what = "ZM"
+  ) %>%
+  
   st_transform(4326)
 
 
 shp_sec_elec <- shp_sec_elec %>%
-  st_zm(drop = TRUE, what = "ZM") %>%
+  
+  st_zm(
+    drop = TRUE,
+    what = "ZM"
+  ) %>%
+  
   st_transform(4326) %>%
+  
+  select(
+    SECCION,
+    geometry
+  ) %>%
+  
   mutate(
-    SECCION = trimws(as.character(SECCION))
+    
+    SECCION =
+      trimws(
+        as.character(SECCION)
+      )
+    
   )
 
 
 # ==========================================================
-# 4. INTERFAZ SHINY
+# 6. INTERFAZ
 # ==========================================================
 
 ui <- fluidPage(
-
-  # --------------------------------------------------------
-  # TÍTULO
-  # --------------------------------------------------------
-
+  
   titlePanel(
     "Distrito Electoral 15 - Alcaldía Iztacalco"
   ),
-
-
+  
   sidebarLayout(
-
+    
     # ======================================================
     # PANEL LATERAL
     # ======================================================
-
+    
     sidebarPanel(
-
-      h4("Carga de información"),
-
+      
+      h4("Archivo de datos"),
+      
       fileInput(
-        inputId = "archivo_csv",
-        label = "Selecciona tu archivo CSV:",
-        accept = c(
-          ".csv",
-          "text/csv"
-        )
+        
+        inputId =
+          "archivo_csv",
+        
+        label =
+          "Selecciona tu archivo CSV:",
+        
+        accept =
+          c(
+            ".csv",
+            "text/csv"
+          )
+        
       ),
-
-      helpText(
-        "Columnas requeridas:"
-      ),
-
-      tags$ul(
-        tags$li("Sección electoral"),
-        tags$li("DIFERENCIA %"),
-        tags$li("VISITADO"),
-        tags$li("NO DE FIRMAS")
-      ),
-
+      
       actionButton(
-        inputId = "procesar",
-        label = "Procesar CSV",
-        icon = icon("refresh"),
-        class = "btn-primary"
+        
+        inputId =
+          "procesar",
+        
+        label =
+          "Procesar CSV",
+        
+        icon =
+          icon("refresh"),
+        
+        class =
+          "btn-primary"
+        
       ),
-
+      
       hr(),
-
-      # ----------------------------------------------------
-      # ESTADO
-      # ----------------------------------------------------
-
+      
       h4("Estado"),
-
-      textOutput("estado_csv"),
-
+      
+      textOutput(
+        "estado_csv"
+      ),
+      
       hr(),
-
-      # ----------------------------------------------------
-      # RESUMEN
-      # ----------------------------------------------------
-
+      
       h4("Resumen"),
-
-      tableOutput("resumen"),
-
+      
+      tableOutput(
+        "resumen"
+      ),
+      
       hr(),
-
-      # ----------------------------------------------------
-      # SIMBOLOGÍA
-      # ----------------------------------------------------
-
+      
       h4("Simbología"),
-
+      
       tags$div(
+        
         tags$span(
-          style = "color:green; font-size:20px;",
+          
+          style =
+            paste0(
+              "color:",
+              COLOR_ROJO,
+              "; font-size:22px;"
+            ),
+          
           "●"
+          
         ),
-        " Visitado"
-      ),
-
-      tags$div(
-        tags$span(
-          style = "color:red; font-size:20px;",
-          "●"
-        ),
+        
         " Diferencia ≤ -10"
+        
       ),
-
+      
       tags$div(
+        
         tags$span(
-          style = "color:blue; font-size:20px;",
+          
+          style =
+            paste0(
+              "color:",
+              COLOR_GRIS,
+              "; font-size:22px;"
+            ),
+          
           "●"
+          
         ),
+        
+        " Diferencia entre -10 y 10"
+        
+      ),
+      
+      tags$div(
+        
+        tags$span(
+          
+          style =
+            paste0(
+              "color:",
+              COLOR_AZUL,
+              "; font-size:22px;"
+            ),
+          
+          "●"
+          
+        ),
+        
         " Diferencia ≥ 10"
+        
       ),
-
+      
       tags$div(
+        
         tags$span(
-          style = "color:gray; font-size:20px;",
+          
+          style =
+            paste0(
+              "color:",
+              COLOR_VERDE,
+              "; font-size:22px;"
+            ),
+          
           "●"
+          
         ),
-        " Empate / diferencia entre -10 y 10"
+        
+        " Visitada"
+        
       ),
-
+      
+      br(),
+      
+      helpText(
+        
+        "Una sección solo se muestra en verde cuando VISITADO = SI."
+        
+      ),
+      
       width = 3
+      
     ),
-
-
+    
+    
     # ======================================================
     # MAPA
     # ======================================================
-
+    
     mainPanel(
-
+      
       leafletOutput(
-        outputId = "mapa",
-        height = "750px"
+        
+        outputId =
+          "mapa",
+        
+        height =
+          "750px"
+        
       )
-
+      
     )
+    
   )
+  
 )
 
 
 # ==========================================================
-# 5. SERVIDOR
+# 7. SERVIDOR
 # ==========================================================
 
-server <- function(input, output, session) {
-
-
+server <- function(
+    input,
+    output,
+    session
+) {
+  
+  
   # ========================================================
-  # 5.1 LECTURA DEL CSV
+  # 7.1 LEER CSV
   # ========================================================
-
+  
   datos_csv <- eventReactive(
+    
     input$procesar,
+    
     {
-
-      req(input$archivo_csv)
-
-
+      
+      req(
+        input$archivo_csv
+      )
+      
+      
       datos <- tryCatch(
-
+        
         read_csv(
-          file = input$archivo_csv$datapath,
-          locale = locale(
-            encoding = "latin1"
-          ),
-          show_col_types = FALSE
+          
+          file =
+            input$archivo_csv$datapath,
+          
+          locale =
+            locale(
+              encoding = "latin1"
+            ),
+          
+          show_col_types =
+            FALSE
+          
         ),
-
+        
         error = function(e) {
-
+          
           showNotification(
+            
             paste(
               "Error al leer el CSV:",
               e$message
             ),
-            type = "error",
-            duration = 10
+            
+            type =
+              "error",
+            
+            duration =
+              10
+            
           )
-
+          
           return(NULL)
+          
         }
+        
       )
-
-
-      req(!is.null(datos))
-
-
-      # ----------------------------------------------------
+      
+      
+      req(
+        !is.null(datos)
+      )
+      
+      
+      # ====================================================
       # COLUMNAS NECESARIAS
-      # ----------------------------------------------------
-
+      # ====================================================
+      
       columnas_necesarias <- c(
+        
         "Sección electoral",
+        
         "DIFERENCIA %",
+        
         "VISITADO",
+        
         "NO DE FIRMAS"
+        
       )
-
-
-      columnas_faltantes <- setdiff(
-        columnas_necesarias,
-        names(datos)
-      )
-
-
-      if (length(columnas_faltantes) > 0) {
-
+      
+      
+      columnas_faltantes <-
+        
+        setdiff(
+          
+          columnas_necesarias,
+          
+          names(datos)
+          
+        )
+      
+      
+      if (
+        length(columnas_faltantes) > 0
+      ) {
+        
         showNotification(
+          
           paste(
-            "El CSV no contiene:",
+            
+            "Faltan estas columnas:",
+            
             paste(
+              
               columnas_faltantes,
+              
               collapse = ", "
+              
             )
+            
           ),
-          type = "error",
-          duration = 10
+          
+          type =
+            "error",
+          
+          duration =
+            10
+          
         )
-
+        
+        
         return(NULL)
+        
       }
-
-
-      # ----------------------------------------------------
-      # LIMPIEZA
-      # ----------------------------------------------------
-
+      
+      
+      # ====================================================
+      # LIMPIAR DATOS
+      # ====================================================
+      
       datos <- datos %>%
-
+        
         mutate(
-
+          
+          # -----------------------------------------------
+          # SECCIÓN
+          # -----------------------------------------------
+          
           `Sección electoral` =
+            
             trimws(
+              
               as.character(
+                
                 `Sección electoral`
+                
               )
+              
             ),
-
-          # parse_number permite valores como:
-          # 10
-          # 10%
-          # -10
-          # -10%
+          
+          
+          # -----------------------------------------------
+          # DIFERENCIA
+          # -----------------------------------------------
+          
           `DIFERENCIA %` =
+            
             suppressWarnings(
+              
               parse_number(
+                
                 as.character(
+                  
                   `DIFERENCIA %`
+                  
                 )
+                
               )
+              
             ),
-
+          
+          
+          # -----------------------------------------------
+          # VISITADO
+          # -----------------------------------------------
+          
           VISITADO =
+            
             toupper(
+              
               trimws(
+                
                 as.character(
+                  
                   VISITADO
+                  
                 )
+                
               )
+              
             ),
-
+          
+          
+          # -----------------------------------------------
+          # FIRMAS
+          # -----------------------------------------------
+          
           `NO DE FIRMAS` =
+            
             suppressWarnings(
+              
               parse_number(
+                
                 as.character(
+                  
                   `NO DE FIRMAS`
+                  
                 )
+                
               )
+              
             )
-        ) %>%
-
-        # Evita duplicar secciones
-        distinct(
-          `Sección electoral`,
-          .keep_all = TRUE
+          
         )
-
-
+      
+      
       datos
+      
     }
+    
   )
-
-
+  
+  
   # ========================================================
-  # 5.2 UNIR CSV CON SECCIONES
+  # 7.2 UNIR CSV CON SHAPEFILE
   # ========================================================
-
+  
   datos_mapa <- reactive({
-
-    req(datos_csv())
-
-    datos <- datos_csv()
-
-
-    mapa <- shp_sec_elec %>%
-
+    
+    req(
+      datos_csv()
+    )
+    
+    
+    datos <-
+      datos_csv()
+    
+    
+    mapa <-
+      
+      shp_sec_elec %>%
+      
       left_join(
+        
         datos,
+        
         by = c(
+          
           "SECCION" =
             "Sección electoral"
+          
         )
+        
       )
-
-
+    
+    
     # ======================================================
-    # CLASIFICACIÓN
+    # 7.3 DETERMINAR VISITADO
     # ======================================================
-
+    
     mapa <- mapa %>%
-
+      
       mutate(
-
-        categoria_color = case_when(
-
-          # ------------------------------------------------
-          # VERDE = VISITADO
-          # ------------------------------------------------
-
+        
+        visitado_real =
+          
           !is.na(VISITADO) &
-            VISITADO %in%
-            c(
-              "SI",
-              "SÍ",
-              "YES",
-              "TRUE",
-              "1"
-            ) ~ "green",
-
-
-          # ------------------------------------------------
-          # ROJO = DIFERENCIA <= -10
-          # ------------------------------------------------
-
-          !is.na(`DIFERENCIA %`) &
-            `DIFERENCIA %` <= -10 ~
-            "red",
-
-
-          # ------------------------------------------------
-          # AZUL = DIFERENCIA >= 10
-          # ------------------------------------------------
-
-          !is.na(`DIFERENCIA %`) &
-            `DIFERENCIA %` >= 10 ~
-            "blue",
-
-
-          # ------------------------------------------------
-          # GRIS = EMPATE / INTERMEDIO
-          # ------------------------------------------------
-
-          !is.na(`DIFERENCIA %`) &
-            `DIFERENCIA %` > -10 &
-            `DIFERENCIA %` < 10 ~
-            "gray",
-
-
-          # ------------------------------------------------
-          # SIN INFORMACIÓN
-          # ------------------------------------------------
-
-          TRUE ~ "gray"
-        )
+          
+          VISITADO %in% c(
+            
+            "SI",
+            
+            "SÍ",
+            
+            "YES",
+            
+            "TRUE",
+            
+            "1"
+            
+          )
+        
       )
-
-
+    
+    
+    # ======================================================
+    # 7.4 ASIGNAR COLOR DIRECTAMENTE
+    # ======================================================
+    
+    mapa <- mapa %>%
+      
+      mutate(
+        
+        color_seccion = case_when(
+          
+          # ----------------------------------------------
+          # VISITADA = VERDE
+          # ----------------------------------------------
+          
+          visitado_real == TRUE ~
+            
+            COLOR_VERDE,
+          
+          
+          # ----------------------------------------------
+          # DIFERENCIA <= -10 = ROJO
+          # ----------------------------------------------
+          
+          !is.na(
+            `DIFERENCIA %`
+          ) &
+            
+            `DIFERENCIA %` <= -10 ~
+            
+            COLOR_ROJO,
+          
+          
+          # ----------------------------------------------
+          # DIFERENCIA >= 10 = AZUL
+          # ----------------------------------------------
+          
+          !is.na(
+            `DIFERENCIA %`
+          ) &
+            
+            `DIFERENCIA %` >= 10 ~
+            
+            COLOR_AZUL,
+          
+          
+          # ----------------------------------------------
+          # ENTRE -10 Y 10 = GRIS
+          # ----------------------------------------------
+          
+          !is.na(
+            `DIFERENCIA %`
+          ) &
+            
+            `DIFERENCIA %` > -10 &
+            
+            `DIFERENCIA %` < 10 ~
+            
+            COLOR_GRIS,
+          
+          
+          # ----------------------------------------------
+          # SIN INFORMACIÓN = GRIS
+          # ----------------------------------------------
+          
+          TRUE ~
+            
+            COLOR_GRIS
+          
+        )
+        
+      )
+    
+    
     mapa
+    
   })
-
-
+  
+  
   # ========================================================
-  # 5.3 ESTADO DEL CSV
+  # 7.5 ESTADO
   # ========================================================
-
+  
   output$estado_csv <- renderText({
-
+    
     if (
       is.null(
         input$archivo_csv
       )
     ) {
-
+      
       return(
         "No se ha seleccionado ningún CSV."
       )
+      
     }
-
-
+    
+    
     if (
       is.null(
         datos_csv()
       )
     ) {
-
+      
       return(
         "El archivo aún no ha sido procesado."
       )
+      
     }
-
-
-    "✓ CSV procesado correctamente"
+    
+    
+    mapa <-
+      datos_mapa()
+    
+    
+    visitadas <-
+      
+      sum(
+        
+        mapa$visitado_real,
+        
+        na.rm = TRUE
+        
+      )
+    
+    
+    paste0(
+      
+      "✓ CSV procesado correctamente. ",
+      
+      "Secciones visitadas: ",
+      
+      visitadas
+      
+    )
+    
   })
-
-
+  
+  
   # ========================================================
-  # 5.4 RESUMEN
+  # 7.6 RESUMEN
   # ========================================================
-
+  
   output$resumen <- renderTable({
-
-    req(datos_mapa())
-
-
-    mapa <- datos_mapa()
-
-
-    # ------------------------------------------------------
-    # TOTAL DE SECCIONES
-    # ------------------------------------------------------
-
-    total_secciones <- nrow(mapa)
-
-
-    # ------------------------------------------------------
-    # VISITADAS
-    # ------------------------------------------------------
-
-    visitadas <- sum(
-      !is.na(mapa$VISITADO) &
-        mapa$VISITADO %in%
-        c(
-          "SI",
-          "SÍ",
-          "YES",
-          "TRUE",
-          "1"
-        )
+    
+    req(
+      datos_mapa()
     )
-
-
-    # ------------------------------------------------------
-    # FIRMAS
-    # ------------------------------------------------------
-
-    firmas_totales <- sum(
-      mapa$`NO DE FIRMAS`,
-      na.rm = TRUE
-    )
-
-
-    # ------------------------------------------------------
-    # FIRMAS EN SECCIONES VISITADAS
-    # ------------------------------------------------------
-
-    firmas_visitadas <- sum(
-      mapa$`NO DE FIRMAS`[
-        !is.na(mapa$VISITADO) &
-          mapa$VISITADO %in%
-          c(
-            "SI",
-            "SÍ",
-            "YES",
-            "TRUE",
-            "1"
-          )
-      ],
-      na.rm = TRUE
-    )
-
-
-    # ------------------------------------------------------
-    # ROJAS
-    # ------------------------------------------------------
-
-    rojas <- sum(
-      mapa$categoria_color == "red",
-      na.rm = TRUE
-    )
-
-
-    # ------------------------------------------------------
-    # AZULES
-    # ------------------------------------------------------
-
-    azules <- sum(
-      mapa$categoria_color == "blue",
-      na.rm = TRUE
-    )
-
-
-    # ------------------------------------------------------
-    # GRISES
-    # ------------------------------------------------------
-
-    grises <- sum(
-      mapa$categoria_color == "gray",
-      na.rm = TRUE
-    )
-
-
-    # ------------------------------------------------------
-    # PENDIENTES
-    # ------------------------------------------------------
-
-    pendientes <- total_secciones - visitadas
-
-
-    # ------------------------------------------------------
-    # TABLA
-    # ------------------------------------------------------
-
+    
+    
+    mapa <-
+      datos_mapa()
+    
+    
+    total_secciones <-
+      nrow(mapa)
+    
+    
+    total_visitadas <-
+      
+      sum(
+        
+        mapa$visitado_real,
+        
+        na.rm = TRUE
+        
+      )
+    
+    
+    total_rojas <-
+      
+      sum(
+        
+        mapa$color_seccion ==
+          COLOR_ROJO,
+        
+        na.rm = TRUE
+        
+      )
+    
+    
+    total_azules <-
+      
+      sum(
+        
+        mapa$color_seccion ==
+          COLOR_AZUL,
+        
+        na.rm = TRUE
+        
+      )
+    
+    
+    total_grises <-
+      
+      sum(
+        
+        mapa$color_seccion ==
+          COLOR_GRIS,
+        
+        na.rm = TRUE
+        
+      )
+    
+    
+    total_firmas <-
+      
+      sum(
+        
+        mapa$`NO DE FIRMAS`,
+        
+        na.rm = TRUE
+        
+      )
+    
+    
+    firmas_visitadas <-
+      
+      sum(
+        
+        mapa$`NO DE FIRMAS`[
+          mapa$visitado_real
+        ],
+        
+        na.rm = TRUE
+        
+      )
+    
+    
     data.frame(
-
+      
       Indicador = c(
+        
         "Total de secciones",
+        
         "Secciones visitadas",
-        "Secciones pendientes",
+        
         "Diferencia ≤ -10",
+        
         "Diferencia ≥ 10",
+        
         "Empate / intermedio",
-        "Firmas totales",
-        "Firmas en visitadas"
+        
+        "Total de firmas",
+        
+        "Firmas en secciones visitadas"
+        
       ),
-
+      
       Total = c(
+        
         total_secciones,
-        visitadas,
-        pendientes,
-        rojas,
-        azules,
-        grises,
-        firmas_totales,
+        
+        total_visitadas,
+        
+        total_rojas,
+        
+        total_azules,
+        
+        total_grises,
+        
+        total_firmas,
+        
         firmas_visitadas
+        
       ),
-
-      check.names = FALSE
+      
+      check.names =
+        FALSE
+      
     )
+    
   })
-
-
+  
+  
   # ========================================================
-  # 5.5 MAPA
+  # 7.7 MAPA BASE
   # ========================================================
-
+  
   output$mapa <- renderLeaflet({
-
-    # ------------------------------------------------------
-    # CENTRO DEL MAPA
-    # ------------------------------------------------------
-
-    centro <- st_centroid(
-      st_union(
-        shp_dist15
+    
+    centro <-
+      
+      st_centroid(
+        
+        st_union(
+          
+          shp_dist15
+          
+        )
+        
       )
-    )
-
-
-    coordenadas <- st_coordinates(
-      centro
-    )
-
-
-    # ------------------------------------------------------
-    # MAPA BASE
-    # ------------------------------------------------------
-
-    mapa_base <- leaflet(
-      options = leafletOptions(
-        minZoom = 10,
-        maxZoom = 19
+    
+    
+    coordenadas <-
+      
+      st_coordinates(
+        
+        centro
+        
       )
+    
+    
+    leaflet(
+      
+      options =
+        
+        leafletOptions(
+          
+          minZoom =
+            10,
+          
+          maxZoom =
+            19
+          
+        )
+      
     ) %>%
-
+      
       addProviderTiles(
+        
         providers$CartoDB.Positron,
-        group = "Mapa"
-      ) %>%
-
-      setView(
-        lng = coordenadas[1],
-        lat = coordenadas[2],
-        zoom = 12
-      )
-
-
-    # ------------------------------------------------------
-    # DISTRITO ELECTORAL
-    # ------------------------------------------------------
-
-    mapa_base %>%
-
-      addPolygons(
-
-        data = shp_dist15,
-
-        fill = FALSE,
-
-        color = "black",
-
-        weight = 3,
-
-        opacity = 1,
-
-        group = "Distrito Electoral 15"
-      ) %>%
-
-      addLayersControl(
-
-        baseGroups = c(
+        
+        group =
           "Mapa"
-        ),
-
-        overlayGroups = c(
-          "Distrito Electoral 15",
-          "Secciones"
-        ),
-
-        options = layersControlOptions(
-          collapsed = FALSE
-        )
+        
+      ) %>%
+      
+      setView(
+        
+        lng =
+          coordenadas[1],
+        
+        lat =
+          coordenadas[2],
+        
+        zoom =
+          12
+        
+      ) %>%
+      
+      addPolygons(
+        
+        data =
+          shp_dist15,
+        
+        fill =
+          FALSE,
+        
+        color =
+          "black",
+        
+        weight =
+          3,
+        
+        opacity =
+          1,
+        
+        group =
+          "Distrito Electoral 15"
+        
       )
+    
   })
-
-
+  
+  
   # ========================================================
-  # 5.6 ACTUALIZACIÓN DEL MAPA
+  # 7.8 DIBUJAR SECCIONES
   # ========================================================
-
+  
   observe({
-
-    req(datos_mapa())
-
-
-    mapa <- datos_mapa()
-
-
-    # ------------------------------------------------------
-    # PALETA
-    # ------------------------------------------------------
-
-    pal <- colorFactor(
-
-      palette = c(
-        "green",
-        "red",
-        "blue",
-        "gray"
-      ),
-
-      domain = c(
-        "green",
-        "red",
-        "blue",
-        "gray"
-      )
+    
+    req(
+      datos_mapa()
     )
-
-
-    # ------------------------------------------------------
-    # POPUP
-    # ------------------------------------------------------
-
-    popup <- paste0(
-
-      "<div style='font-size:14px;'>",
-
-      "<b>Sección electoral:</b> ",
-      mapa$SECCION,
-
-      "<br><b>Diferencia %:</b> ",
-      ifelse(
-        is.na(
-          mapa$`DIFERENCIA %`
+    
+    
+    mapa <-
+      datos_mapa()
+    
+    
+    # ======================================================
+    # POPUPS
+    # ======================================================
+    
+    popup <-
+      
+      paste0(
+        
+        "<div style='font-size:14px;'>",
+        
+        "<b>Sección electoral:</b> ",
+        
+        mapa$SECCION,
+        
+        
+        "<br><b>Diferencia %:</b> ",
+        
+        ifelse(
+          
+          is.na(
+            mapa$`DIFERENCIA %`
+          ),
+          
+          "Sin información",
+          
+          paste0(
+            
+            mapa$`DIFERENCIA %`,
+            
+            "%"
+            
+          )
+          
         ),
-        "Sin información",
-        paste0(
-          mapa$`DIFERENCIA %`,
-          "%"
-        )
-      ),
-
-      "<br><b>Visitado:</b> ",
-      ifelse(
-        is.na(
-          mapa$VISITADO
+        
+        
+        "<br><b>Visitado:</b> ",
+        
+        ifelse(
+          
+          mapa$visitado_real,
+          
+          "SI",
+          
+          "NO"
+          
         ),
-        "Sin información",
-        mapa$VISITADO
-      ),
-
-      "<br><b>Número de firmas:</b> ",
-      ifelse(
-        is.na(
+        
+        
+        "<br><b>Número de firmas:</b> ",
+        
+        ifelse(
+          
+          is.na(
+            mapa$`NO DE FIRMAS`
+          ),
+          
+          "0",
+          
           mapa$`NO DE FIRMAS`
+          
         ),
-        "Sin información",
-        mapa$`NO DE FIRMAS`
-      ),
-
-      "<br><b>Categoría:</b> ",
-
-      case_when(
-
-        mapa$categoria_color ==
-          "green" ~
-          "Visitado",
-
-        mapa$categoria_color ==
-          "red" ~
-          "Diferencia ≤ -10",
-
-        mapa$categoria_color ==
-          "blue" ~
-          "Diferencia ≥ 10",
-
-        TRUE ~
-          "Empate / intermedio"
-      ),
-
-      "</div>"
-    )
-
-
-    # ------------------------------------------------------
-    # ACTUALIZAR MAPA
-    # ------------------------------------------------------
-
+        
+        
+        "<br><b>Estatus:</b> ",
+        
+        case_when(
+          
+          mapa$visitado_real == TRUE ~
+            
+            "VISITADA",
+          
+          !is.na(
+            mapa$`DIFERENCIA %`
+          ) &
+            
+            mapa$`DIFERENCIA %` <= -10 ~
+            
+            "DIFERENCIA ≤ -10",
+          
+          !is.na(
+            mapa$`DIFERENCIA %`
+          ) &
+            
+            mapa$`DIFERENCIA %` >= 10 ~
+            
+            "DIFERENCIA ≥ 10",
+          
+          TRUE ~
+            
+            "EMPATE / INTERMEDIO"
+          
+        ),
+        
+        "</div>"
+        
+      )
+    
+    
+    # ======================================================
+    # DIBUJAR SECCIONES
+    #
+    # CONTORNO DISCRETO
+    # ======================================================
+    
     leafletProxy(
       "mapa"
     ) %>%
-
+      
       clearGroup(
         "Secciones"
       ) %>%
-
+      
       addPolygons(
-
-        data = mapa,
-
+        
+        data =
+          mapa,
+        
+        # --------------------------------------------------
+        # COLOR DIRECTO
+        # --------------------------------------------------
+        
         fillColor =
-          pal(
-            mapa$categoria_color
-          ),
-
-        fillOpacity = 0.55,
-
-        color = "white",
-
-        weight = 1,
-
-        opacity = 1,
-
-        popup = popup,
-
+          mapa$color_seccion,
+        
+        fillOpacity =
+          0.60,
+        
+        # --------------------------------------------------
+        # CONTORNO DE SECCIONES
+        # MÁS FINO Y DISCRETO
+        # --------------------------------------------------
+        
+        color =
+          "#D0D0D0",
+        
+        weight =
+          0.5,
+        
+        opacity =
+          0.7,
+        
+        popup =
+          popup,
+        
+        # --------------------------------------------------
+        # AL PASAR EL CURSOR
+        # --------------------------------------------------
+        
         highlightOptions =
+          
           highlightOptions(
-            weight = 3,
-            color = "black",
-            fillOpacity = 0.75,
-            bringToFront = TRUE
+            
+            weight =
+              2,
+            
+            color =
+              "black",
+            
+            fillOpacity =
+              0.80,
+            
+            bringToFront =
+              TRUE
+            
           ),
-
-        group = "Secciones"
+        
+        group =
+          "Secciones"
+        
       )
+    
   })
+  
 }
 
 
 # ==========================================================
-# 6. EJECUTAR APLICACIÓN
+# 8. EJECUTAR APLICACIÓN
 # ==========================================================
 
 shinyApp(
-  ui = ui,
-  server = server
+  
+  ui =
+    ui,
+  
+  server =
+    server
+  
 )
